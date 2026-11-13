@@ -1,0 +1,1 @@
+"""Assistant: planner -> parallel workers (guidance search, session reader) -> aggregator. Only the public guidance is embedded."""

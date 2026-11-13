@@ -1,0 +1,16 @@
+flask
+flask-cors
+flask-socketio
+simple-websocket
+flask-jwt-extended
+pymongo
+mongomock
+python-dotenv
+matplotlib
+jinja2
+weasyprint
+boto3
+gunicorn
+gevent
+langgraph
+google

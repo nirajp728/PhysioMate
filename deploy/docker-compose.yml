@@ -1,0 +1,32 @@
+services:
+  backend:
+    image: ${BACKEND_IMAGE}
+    env_file: .env
+    restart: unless-stopped
+    expose: ["5000"]
+    volumes:
+      - reports:/app/report_files   # only used when S3_BUCKET is empty
+
+  caddy:                            # HTTPS certificate + reverse proxy (WebSocket works by default)
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [backend]
+
+  coturn:                           # start with: docker compose --profile turn up -d
+    image: coturn/coturn:latest
+    profiles: ["turn"]
+    network_mode: host              # TURN needs its real ports and the relay port range
+    restart: unless-stopped
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+volumes:
+  reports:
+  caddy_data:

@@ -1,0 +1,5 @@
+pymongo
+python-dotenv
+matplotlib
+jinja2
+weasyprint

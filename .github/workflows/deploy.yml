@@ -1,0 +1,68 @@
+name: Deploy backend
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "deploy/**", ".github/workflows/**"]   # frontend changes are deployed by Amplify
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-backend" >> $GITHUB_ENV   # image names must be lowercase
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-backend" >> $GITHUB_ENV
+      - name: Copy compose files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "deploy/docker-compose.yml,deploy/Caddyfile,deploy/turnserver.conf"
+          target: "~/rehab"
+          strip_components: 1
+      - name: Restart
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IMAGE,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -e
+            cd ~/rehab
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            export BACKEND_IMAGE="$IMAGE:latest"
+            docker compose pull backend
+            docker compose up -d backend caddy
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if docker compose exec -T backend python -c "import urllib.request as u; u.urlopen('http://localhost:5000/api/health')"; then
+                echo "healthy"; docker image prune -f; exit 0
+              fi
+              sleep 3
+            done
+            echo "backend did not become healthy"; docker compose logs --tail 50 backend; exit 1
